@@ -1,6 +1,6 @@
 function abc() {
     console.log('abc');
-    return 'asxasx';
+    return 'asdasdasd';
 }
 
 abc();
