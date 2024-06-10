@@ -13,7 +13,7 @@ describe("Base Crawler", () => {
             host: string,
             semesterID: string,
             limit: number,
-            map: { [key in keyof Required<ISample>]: string }) {
+            map: Record<keyof Required<ISample>, string>) {
 
             super(host, map, { semesterID, limit, stt2: "" });
         }
@@ -35,19 +35,19 @@ describe("Base Crawler", () => {
             // @ts-ignore
             new Sample("http://localhost/admin.php", "23", undefined, undefined);
         } catch (e) {
-            expect(e).toBeInstanceOf(ValidatorCrawlerError);
-            expect((e as Error).message).toBe("Invalid options/limit");
-            expect((e as ValidatorCrawlerError).description).toBe("Required");
+            expect(e).toBeInstanceOf(CrawlerError);
+            expect((e as Error).message).toBe("Have a crashed error while constructing crawler: Cannot convert undefined or null to object");
         }
     })
 
     test("Creating constructor 3", () => {
         try {
             // @ts-ignore
-            new Sample("http://localhost/admin.php", "50", 10, undefined);
+            new Sample("http://localhost/admin.php", "50", undefined, {});
         } catch (e) {
-            expect(e).toBeInstanceOf(CrawlerError);
-            expect((e as Error).message).toBe("Have a crashed error while constructing crawler: Cannot convert undefined or null to object");
+            expect(e).toBeInstanceOf(ValidatorCrawlerError);
+            expect((e as Error).message).toBe("Invalid options/limit");
+            expect((e as ValidatorCrawlerError).description).toBe("Required");
         }
     })
 

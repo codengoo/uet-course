@@ -1,6 +1,6 @@
 export interface CrawlerResponse<T = any> {
     status: number;
-    data: T;
+    data?: T;
     message: string;
 }
 

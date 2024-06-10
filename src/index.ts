@@ -1,9 +1,11 @@
 import { CrawlerOptions, CrawlerResponse } from "@/types"
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 import { ZodError, z } from "zod";
 import { CrawlerError, ValidatorCrawlerError } from "@/errors";
 
 type RenameMap<T> = Map<keyof Required<T>, string>
+// type RenameObject<T> = { [key in keyof Required<T>]: string }; // optional
+type RenameObject<T> = Record<keyof Required<T>, string> // required
 export default abstract class Crawler<T extends CrawlerOptions> {
     private readonly MaxLimit = 5000;
 
@@ -11,19 +13,18 @@ export default abstract class Crawler<T extends CrawlerOptions> {
     protected _map: RenameMap<T>;
     protected _options: T;
 
-    constructor(host: string, map: { [key in keyof Required<T>]: string }, options: T) {
+    constructor(host: string, map: RenameObject<T>, options: T) {
         try {
-            this._host = z.string().url().parse(host, { path: ["host"] });
+            this._host = "";
+            this._map = new Map();
+
+            this.setHost(host);
+            this.setMap(map);
 
             this._options = z.object({
                 semesterID: z.string().regex(/^\d{1,}$/),
                 limit: z.number().positive().max(this.MaxLimit)
             }).parse(options, { path: ['options'] }) as T;
-
-            this._map = z.map(z.string(), z.string()).parse(
-                new Map(Object.entries(map) as []),
-                { path: ['map'] }
-            ) as RenameMap<T>;
         } catch (error) {
             if (error instanceof ZodError) {
                 throw new ValidatorCrawlerError(error);
@@ -33,62 +34,95 @@ export default abstract class Crawler<T extends CrawlerOptions> {
         }
     }
 
-    // public setQuery(queries: T) {
-    //     this._option = this.filterQuery(queries);
-    // }
+    public setHost(host: string) {
+        this._host = z.string().url().parse(host, { path: ["host"] });
+    }
 
-    // private filterQuery(queries: T): T {
-    //     const cloned_queries = JSON.parse(JSON.stringify(this._option));
+    public getHost() {
+        return this._host;
+    }
 
-    //     Object.keys(queries).forEach(key => {
-    //         if (this._map.get(key as keyof T) && queries[key as keyof T] !== undefined) {
-    //             cloned_queries[key as keyof T] = queries[key as keyof T];
-    //         } else {
-    //             throw new Error("Invalid query key: " + key);
-    //         }
-    //     })
+    public setOptions(options: Partial<T>) {
+        this._options = { ...this._options, ...this.filterOptions(options) };
+    }
 
-    //     return cloned_queries
-    // }
+    public getOptions() {
+        return this._options;
+    }
 
-    // public getQuery() {
-    //     return this._option;
-    // }
+    public setMap(map: RenameObject<T>) {
+        this._map = z.map(z.string(), z.string()).parse(
+            new Map(Object.entries(map) as []),
+            { path: ['map'] }
+        ) as RenameMap<T>;
+    }
 
-    // private joinParameters(queries?: T): string {
-    //     const cloned_queries = queries ? this.filterQuery(queries) : this._option;
+    public getMap() {
+        return this._map;
+    }
 
-    //     return "?" + Object
-    //         .keys(cloned_queries)
-    //         .map(key => this._map.get(key as keyof T) + "=" + cloned_queries[key as keyof T])
-    //         .join("&");
-    // }
+    /**
+     * Eliminates elements that not exist in _map or their values are undefined. 
+     * Override option fields with newest values
+     * @param modifiedOptions 
+     * @returns 
+     */
+    private filterOptions(modifiedOptions?: Partial<T>): Partial<T> {
+        const mergedOptions = { ...this._options, ...(modifiedOptions ? modifiedOptions : {}) }; // merge options
+        const fields = Object.keys(mergedOptions) as (keyof T)[];
+        const options = {} as Partial<T>;
 
-    // protected async fetchData(options?: T): Promise<CrawlerResponse<string>> {
-    //     try {
-    //         const response = await axios.get(this._host + this.joinParameters(options));
+        fields.forEach(key => {
+            if (this._map.get(key) && mergedOptions[key] !== undefined) {
+                options[key] = mergedOptions[key];
+            }
+        })
 
-    //         return {
-    //             status: response.status,
-    //             data: (response.status === 200) ? response.data : undefined,
-    //             message: response.statusText
-    //         }
-    //     } catch (error) {
-    //         if (axios.isAxiosError(error)) {
-    //             return {
-    //                 status: error.response.status,
-    //                 data: undefined,
-    //                 message: "Axios error: " + error.message
-    //             }
-    //         } else {
-    //             return {
-    //                 status: 500,
-    //                 data: undefined,
-    //                 message: "Unknown error: " + error.message
-    //             }
-    //         }
-    //     }
-    // }
+        return options
+    }
+
+    /**
+     * Convert options to query string
+     * @param options 
+     * @returns 
+     */
+    private joinParameters(options?: Partial<T>): string {
+        const queries = this.filterOptions(options ? options : this._options);
+
+        return "?" + (Object
+            .keys(queries) as (keyof T)[])
+            .map(key => this._map.get(key) + "=" + queries[key])
+            .join("&");
+    }
+
+    /**
+     * Fetching data from UET portal
+     * @param options 
+     * @returns 
+     */
+    protected async fetchData(options?: Partial<T>): Promise<CrawlerResponse<string>> {
+        try {
+            const response = await axios.get(this._host + this.joinParameters(options));
+
+            return {
+                status: response.status,
+                data: (response.status === 200) ? response.data : undefined,
+                message: response.statusText
+            }
+        } catch (error) {
+            if (error instanceof AxiosError) {
+                return {
+                    status: error.response?.status || 500,
+                    message: "Axios error: " + error.message
+                }
+            } else {
+                return {
+                    status: 500,
+                    message: "Unknown error: " + (error as Error).message
+                }
+            }
+        }
+    }
 
     // protected abstract parseData(data: string): object
 
